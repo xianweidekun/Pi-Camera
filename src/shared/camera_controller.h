@@ -4,10 +4,17 @@
 #ifndef CAMERA_CONTROLLER_H
 #define CAMERA_CONTROLLER_H
 
-#include <cinepi/cinepi.h>
+// 使用libcamera API
+#include <libcamera/camera.h>
+#include <libcamera/camera_manager.h>
+#include <libcamera/framebuffer_allocator.h>
+#include <libcamera/request.h>
+#include <libcamera/stream.h>
+
 #include <memory>
 #include <string>
 #include <stdexcept>
+#include <vector>
 
 namespace cinepi {
 
@@ -78,11 +85,25 @@ public:
     bool IsRecording() const { return is_recording_; }
 
 private:
-    std::unique_ptr<CinePI> camera_;
+    // libcamera相关成员
+    std::unique_ptr<libcamera::CameraManager> camera_manager_;
+    std::shared_ptr<libcamera::Camera> camera_;
+    std::unique_ptr<libcamera::CameraConfiguration> config_;
+    std::unique_ptr<libcamera::FrameBufferAllocator> allocator_;
+    libcamera::Stream* stream_;
+    libcamera::Request* request_;
+    const libcamera::FrameBuffer* current_buffer_;
+    uint8_t* preview_buffer_;
+
+    // 应用参数
     CameraParams params_;
     bool is_initialized_;
     bool is_previewing_;
     bool is_recording_;
+
+    // 辅助方法
+    void setupControls();
+    void processRequest(libcamera::Request* request);
 };
 
 } // namespace cinepi

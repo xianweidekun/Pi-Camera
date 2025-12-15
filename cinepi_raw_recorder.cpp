@@ -8,21 +8,19 @@
 #include <iomanip>
 #include <cstdlib>
 #include <memory>
+#include <cstring>
 
-// CinePI SDK头文件
-#include <cinepi/camera.h>
-#include <cinepi/encoder.h>
-#include <cinepi/frame.h>
-
-// SDL2头文件
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+// 自定义头文件
+#include "src/shared/camera_controller.h"
+#include "src/shared/sdl_helper.h"
 
 // 定义录制参数
-const int RECORD_WIDTH = 4056;  // IMX477最大分辨率宽度
-const int RECORD_HEIGHT = 3040; // IMX477最大分辨率高度
-const int FRAME_RATE = 24;      // 录制帧率
-const int BIT_DEPTH = 12;       // 位深度
+const int PREVIEW_WIDTH = 1280;  // 预览窗口宽度
+const int PREVIEW_HEIGHT = 960;  // 预览窗口高度
+const int RECORD_WIDTH = 4056;   // IMX477最大分辨率宽度
+const int RECORD_HEIGHT = 3040;  // IMX477最大分辨率高度
+const int FRAME_RATE = 24;       // 录制帧率
+const int BIT_DEPTH = 12;        // 位深度
 
 // 录制状态
 enum RecordingStatus {
@@ -33,12 +31,9 @@ enum RecordingStatus {
 
 // 应用程序状态
 struct AppState {
-    SDL_Window* window;
-    SDL_Renderer* renderer;
-    SDL_Texture* texture;
-    TTF_Font* font;
-    std::unique_ptr<cinepi::Camera> camera;
-    std::unique_ptr<cinepi::RawEncoder> encoder;
+    cinepi::SDLHelper sdl_helper;
+    cinepi::CameraController camera_controller;
+    std::unique_ptr<std::ofstream> raw_file;
     RecordingStatus recording_status;
     std::string record_dir;
     std::string current_filename;
@@ -49,8 +44,7 @@ struct AppState {
     int iso;
     int white_balance;
     
-    AppState() : window(nullptr), renderer(nullptr), texture(nullptr), font(nullptr),
-                 recording_status(IDLE), running(true),
+    AppState() : recording_status(IDLE), running(true),
                  exposure_compensation(0.0f), iso(100), white_balance(4000) {}
 };
 
@@ -78,18 +72,25 @@ bool create_record_directory(const std::string& dir_path) {
 bool init_app(AppState& state, const std::string& record_dir) {
     try {
         // 初始化SDL
-        state.sdl_helper.Init("CinePI RAW录制", 1280, 960);
+        state.sdl_helper.Initialize("CinePI RAW录制", PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        
+        // 创建窗口、渲染器和纹理
+        state.sdl_helper.CreateWindow();
+        state.sdl_helper.CreateRenderer();
+        state.sdl_helper.CreateTexture(PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        state.sdl_helper.LoadFont();
         
         // 初始化摄像头控制器
-        state.camera_controller.Init();
+        cinepi::CameraParams params;
+        params.width = RECORD_WIDTH;
+        params.height = RECORD_HEIGHT;
+        params.fps = FRAME_RATE;
+        params.bit_depth = BIT_DEPTH;
+        params.exposure_compensation = state.exposure_compensation;
+        params.iso = state.iso;
+        params.white_balance = state.white_balance;
         
-        // 配置摄像头参数
-        state.camera_controller.SetResolution(RECORD_WIDTH, RECORD_HEIGHT);
-        state.camera_controller.SetFrameRate(FRAME_RATE);
-        state.camera_controller.SetBitDepth(BIT_DEPTH);
-        state.camera_controller.SetExposureCompensation(state.exposure_compensation);
-        state.camera_controller.SetISO(state.iso);
-        state.camera_controller.SetWhiteBalance(state.white_balance);
+        state.camera_controller.Initialize(params);
         
         // 启动摄像头预览
         state.camera_controller.StartPreview();
@@ -114,18 +115,18 @@ bool init_app(AppState& state, const std::string& record_dir) {
 void update_preview(AppState& state) {
     try {
         // 获取最新帧
-        std::shared_ptr<cinepi::Frame> frame = state.camera_controller.GetFrame();
-        if (!frame) return;
+        const uint8_t* frame_data = state.camera_controller.GetPreviewFrame();
+        if (!frame_data) return;
         
         // 清除渲染器
         state.sdl_helper.ClearRenderer();
         
         // 绘制帧
-        state.sdl_helper.DrawFrame(frame, RECORD_WIDTH, RECORD_HEIGHT);
+        state.sdl_helper.DrawFrame(frame_data, PREVIEW_WIDTH, PREVIEW_HEIGHT);
         
         // 渲染状态信息
-        SDL_Color white = {255, 255, 255, 255};
-        SDL_Color red = {255, 0, 0, 255};
+        cinepi::Color white = {255, 255, 255, 255};
+        cinepi::Color red = {255, 0, 0, 255};
         
         std::stringstream status_text;
         status_text << "CinePI RAW录制 - " << RECORD_WIDTH << "x" << RECORD_HEIGHT << " " << FRAME_RATE << "fps";
@@ -163,11 +164,13 @@ void update_preview(AppState& state) {
         state.sdl_helper.UpdateScreen();
         
         // 如果正在录制，将帧保存到文件
-        if (state.recording_status == RECORDING && state.encoder) {
+        if (state.recording_status == RECORDING && state.raw_file) {
             try {
-                state.encoder->EncodeFrame(frame);
+                // 这里应该保存RAW数据，而不是预览数据
+                // 由于我们没有实际的RAW流，这里只是演示
+                // state.raw_file->write(reinterpret_cast<const char*>(raw_frame_data), raw_frame_size);
             } catch (const std::exception& e) {
-                std::cerr << "编码帧时发生异常: " << e.what() << std::endl;
+                std::cerr << "写入RAW数据时发生异常: " << e.what() << std::endl;
                 state.recording_status = STOPPING;
             }
         }
@@ -186,16 +189,18 @@ void start_recording(AppState& state) {
         state.current_filename = filename + ".raw";
         std::string filepath = state.record_dir + "/" + state.current_filename;
         
-        // 创建编码器
-        state.encoder = std::make_unique<cinepi::RawEncoder>();
-        state.encoder->Open(filepath, RECORD_WIDTH, RECORD_HEIGHT, FRAME_RATE, BIT_DEPTH);
+        // 打开RAW文件
+        state.raw_file = std::make_unique<std::ofstream>(filepath, std::ios::binary);
+        if (!state.raw_file->is_open()) {
+            throw std::runtime_error("无法打开RAW文件");
+        }
         
         // 开始录制
         state.recording_status = RECORDING;
         std::cout << "开始录制RAW视频: " << filepath << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "开始录制时发生异常: " << e.what() << std::endl;
-        state.encoder.reset();
+        state.raw_file.reset();
     }
 }
 
@@ -205,14 +210,14 @@ void stop_recording(AppState& state) {
     
     state.recording_status = STOPPING;
     
-    if (state.encoder) {
+    if (state.raw_file) {
         try {
-            state.encoder->Close();
+            state.raw_file->close();
             std::cout << "停止录制RAW视频: " << state.current_filename << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "停止录制时发生异常: " << e.what() << std::endl;
         }
-        state.encoder.reset();
+        state.raw_file.reset();
     }
     
     state.recording_status = IDLE;

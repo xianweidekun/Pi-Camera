@@ -37,11 +37,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 检查CinePI SDK
-pkg-config --exists cinepi > /dev/null 2>&1
+# 检查libcamera
+pkg-config --exists libcamera > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-    echo "错误: 未安装CinePI SDK"
-    echo "请先安装CinePI SDK"
+    echo "错误: 未安装libcamera库"
+    echo "请先安装: sudo apt install libcamera-dev libcamera-apps"
     exit 1
 fi
 
@@ -56,7 +56,7 @@ cd build
 # 编译预览应用
 echo "编译cinepi_preview应用..."
 g++ -std=c++17 ../cinepi_preview.cpp -o cinepi_preview \
-    $(pkg-config --cflags --libs cinepi) \
+    $(pkg-config --cflags --libs libcamera) \
     $(pkg-config --cflags --libs sdl2) \
     $(pkg-config --cflags --libs SDL2_ttf)
 
