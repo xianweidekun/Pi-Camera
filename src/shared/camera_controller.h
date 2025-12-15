@@ -7,10 +7,11 @@
 // 使用libcamera API
 #include <libcamera/camera.h>
 #include <libcamera/camera_manager.h>
+#include <libcamera/framebuffer.h>
 #include <libcamera/framebuffer_allocator.h>
+#include <libcamera/framebuffer_mapper.h>
 #include <libcamera/request.h>
 #include <libcamera/stream.h>
-
 #include <memory>
 #include <string>
 #include <stdexcept>
@@ -94,7 +95,6 @@ private:
     libcamera::Request* request_;
     const libcamera::FrameBuffer* current_buffer_;
     uint8_t* preview_buffer_;
-    libcamera::SignalConnection request_connection_;
 
     // 应用参数
     CameraParams params_;
