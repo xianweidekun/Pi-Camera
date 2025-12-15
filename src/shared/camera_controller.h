@@ -9,7 +9,6 @@
 #include <libcamera/camera_manager.h>
 #include <libcamera/framebuffer.h>
 #include <libcamera/framebuffer_allocator.h>
-#include <libcamera/framebuffer_mapper.h>
 #include <libcamera/request.h>
 #include <libcamera/stream.h>
 #include <memory>
