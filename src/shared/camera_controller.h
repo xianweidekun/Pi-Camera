@@ -94,6 +94,7 @@ private:
     libcamera::Request* request_;
     const libcamera::FrameBuffer* current_buffer_;
     uint8_t* preview_buffer_;
+    libcamera::SignalConnection request_connection_;
 
     // 应用参数
     CameraParams params_;

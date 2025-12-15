@@ -6,6 +6,9 @@
 #include <memory>
 #include <thread>
 #include <chrono>
+#include <cstring>
+#include <libcamera/control_ids.h>
+#include <libcamera/formats.h>
 
 namespace cinepi {
 
@@ -129,24 +132,18 @@ void CameraController::setupControls() {
         return;
     }
 
-    libcamera::ControlList controls = camera_->controls();
+    libcamera::ControlList controls(camera_->controls());
 
     // 设置曝光补偿
-    if (controls.contains(libcamera::controls::ExposureValue)) {
-        controls.set(libcamera::controls::ExposureValue, params_.exposure_compensation);
-    }
+    controls.set(libcamera::controls::ExposureValue, params_.exposure_compensation);
 
     // 设置ISO
-    if (controls.contains(libcamera::controls::AnalogueGain)) {
-        // ISO 100 = gain 1.0
-        float gain = static_cast<float>(params_.iso) / 100.0f;
-        controls.set(libcamera::controls::AnalogueGain, gain);
-    }
+    // ISO 100 = gain 1.0
+    double gain = static_cast<double>(params_.iso) / 100.0;
+    controls.set(libcamera::controls::AnalogueGain, gain);
 
     // 设置白平衡
-    if (controls.contains(libcamera::controls::ColourTemperature)) {
-        controls.set(libcamera::controls::ColourTemperature, params_.white_balance);
-    }
+    controls.set(libcamera::controls::ColourTemperature, params_.white_balance);
 
     // 应用控制
     camera_->setControls(controls);
@@ -180,14 +177,14 @@ void CameraController::StartPreview() {
             // 设置请求缓冲
             request_->addBuffer(stream_, buffers[0].get());
 
-            // 设置请求完成信号
-            request_->completed.connect(this, &CameraController::processRequest);
-
             // 启动相机
             libcamera::ControlList controls = camera_->controls();
             if (camera_->start(&controls)) {
                 throw std::runtime_error("相机启动失败");
             }
+
+            // 连接请求完成信号
+            request_connection_ = camera_->requestCompleted.connect(this, &CameraController::processRequest);
 
             // 发送请求
             if (camera_->queueRequest(request_)) {
@@ -210,8 +207,9 @@ void CameraController::StopPreview() {
             if (camera_) {
                 camera_->stop();
             }
+            // 断开请求完成信号
+            request_connection_.disconnect();
             if (request_) {
-                request_->completed.disconnect(this, &CameraController::processRequest);
                 request_ = nullptr;
             }
             is_previewing_ = false;
@@ -233,14 +231,24 @@ void CameraController::processRequest(libcamera::Request* request) {
             // 复制数据到预览缓冲区（简化版，实际需要根据像素格式进行转换）
             if (buffer->planes().size() > 0) {
                 const libcamera::FrameBuffer::Plane& plane = buffer->planes()[0];
-                std::memcpy(preview_buffer_, plane.memory.data(), 
+                std::memcpy(preview_buffer_, plane.data(), 
                            std::min(static_cast<size_t>(plane.length), static_cast<size_t>(params_.width * params_.height * 3)));
             }
         }
 
-        // 重新发送请求以持续获取帧
+        // 重新创建并发送请求以持续获取帧
         if (is_previewing_) {
-            camera_->queueRequest(request);
+            std::unique_ptr<libcamera::Request> new_request = camera_->createRequest();
+            if (new_request) {
+                // 获取缓冲列表
+                const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers = allocator_->buffers(stream_);
+                if (!buffers.empty()) {
+                    // 设置请求缓冲
+                    new_request->addBuffer(stream_, buffers[0].get());
+                    // 发送请求
+                    camera_->queueRequest(std::move(new_request));
+                }
+            }
         }
     }
 }
