@@ -76,15 +76,39 @@ bool create_record_directory(const std::string& dir_path) {
 
 // 初始化应用程序
 bool init_app(AppState& state, const std::string& record_dir) {
+    bool success = false;
+    
     try {
         // 初始化SDL
-        state.sdl_helper.Initialize();
+        if (!state.sdl_helper.Initialize()) {
+            std::cerr << "无法初始化SDL" << std::endl;
+            return false;
+        }
         
         // 创建窗口、渲染器和纹理
         state.window = cinepi::MakeWindow(state.sdl_helper.CreateWindow("CinePI RAW录制", PREVIEW_WIDTH, PREVIEW_HEIGHT));
+        if (!state.window) {
+            std::cerr << "无法创建窗口" << std::endl;
+            return false;
+        }
+        
         state.renderer = cinepi::MakeRenderer(state.sdl_helper.CreateRenderer(state.window.get()));
+        if (!state.renderer) {
+            std::cerr << "无法创建渲染器" << std::endl;
+            return false;
+        }
+        
         state.texture = cinepi::MakeTexture(state.sdl_helper.CreateTexture(state.renderer.get(), SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, PREVIEW_WIDTH, PREVIEW_HEIGHT));
+        if (!state.texture) {
+            std::cerr << "无法创建纹理" << std::endl;
+            return false;
+        }
+        
         state.font = cinepi::MakeFont(state.sdl_helper.LoadFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16));
+        if (!state.font) {
+            std::cerr << "无法加载字体" << std::endl;
+            // 字体加载失败不影响核心功能，继续执行
+        }
         
         // 初始化摄像头控制器
         cinepi::CameraParams params;
@@ -96,25 +120,40 @@ bool init_app(AppState& state, const std::string& record_dir) {
         params.iso = state.iso;
         params.white_balance = state.white_balance;
         
-        state.camera_controller.Initialize(params);
+        if (!state.camera_controller.Initialize(params)) {
+            std::cerr << "无法初始化摄像头控制器" << std::endl;
+            return false;
+        }
         
         // 启动摄像头预览
-        state.camera_controller.StartPreview();
+        if (!state.camera_controller.StartPreview()) {
+            std::cerr << "无法启动摄像头预览" << std::endl;
+            return false;
+        }
         
         // 设置录制目录
         state.record_dir = record_dir;
         if (!create_record_directory(state.record_dir)) {
+            // 清理已初始化的资源
+            state.camera_controller.StopPreview();
             return false;
         }
         
         state.recording_status = IDLE;
         state.running = true;
         
-        return true;
+        success = true;
     } catch (const std::exception& e) {
         std::cerr << "初始化应用时发生异常: " << e.what() << std::endl;
-        return false;
+        // 清理已初始化的资源
+        try {
+            state.camera_controller.StopPreview();
+        } catch (...) {
+            // 忽略清理时的异常
+        }
     }
+    
+    return success;
 }
 
 // 更新预览窗口
@@ -290,7 +329,7 @@ void handle_keyboard(AppState& state, SDL_Event& event) {
 
 int main(int argc, char* argv[]) {
     // 默认录制目录
-    std::string record_dir = "/home/pi/cinepi_recordings";
+    std::string record_dir = std::string(getenv("HOME")) + "/cinepi_recordings";
     
     // 检查命令行参数
     if (argc > 1) {
