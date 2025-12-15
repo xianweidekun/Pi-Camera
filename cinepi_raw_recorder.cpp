@@ -58,7 +58,14 @@ struct AppState {
 std::string get_current_time_filename() {
     auto now = std::chrono::system_clock::now();
     auto now_time = std::chrono::system_clock::to_time_t(now);
+    
+    // 使用线程安全的本地时间获取函数
+    #ifdef _WIN32
+    std::tm local_tm;
+    localtime_s(&local_tm, &now_time);
+    #else
     std::tm local_tm = *std::localtime(&now_time);
+    #endif
     
     std::stringstream ss;
     ss << std::put_time(&local_tm, "cinepi_%Y%m%d_%H%M%S");
@@ -67,10 +74,20 @@ std::string get_current_time_filename() {
 
 // 创建录制目录
 bool create_record_directory(const std::string& dir_path) {
+    #ifdef _WIN32
+    // Windows系统
+    std::string command = "mkdir " + dir_path;
+    if (std::system(command.c_str()) != 0) {
+        std::cerr << "无法创建录制目录: " << dir_path << std::endl;
+        return false;
+    }
+    #else
+    // Linux/Mac系统
     if (std::system(("mkdir -p " + dir_path).c_str()) != 0) {
         std::cerr << "无法创建录制目录: " << dir_path << std::endl;
         return false;
     }
+    #endif
     return true;
 }
 
@@ -320,7 +337,24 @@ void handle_keyboard(AppState& state, SDL_Event& event) {
 
 int main(int argc, char* argv[]) {
     // 默认录制目录
-    std::string record_dir = std::string(getenv("HOME")) + "/cinepi_recordings";
+    std::string record_dir;
+    #ifdef _WIN32
+    // Windows系统
+    const char* user_profile = getenv("USERPROFILE");
+    if (user_profile) {
+        record_dir = std::string(user_profile) + "\\cinepi_recordings";
+    } else {
+        record_dir = "cinepi_recordings";
+    }
+    #else
+    // Linux/Mac系统
+    const char* home_dir = getenv("HOME");
+    if (home_dir) {
+        record_dir = std::string(home_dir) + "/cinepi_recordings";
+    } else {
+        record_dir = "cinepi_recordings";
+    }
+    #endif
     
     // 检查命令行参数
     if (argc > 1) {

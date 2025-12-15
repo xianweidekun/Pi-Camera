@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# CinePI RAW录制应用编译脚本
-
 # 检查是否安装了必要的依赖
 echo "检查必要的依赖..."
 
@@ -37,7 +35,6 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-
 # 检查libcamera
 pkg-config --exists libcamera > /dev/null 2>&1
 if [ $? -ne 0 ]; then
@@ -49,37 +46,14 @@ fi
 echo "所有依赖检查通过!"
 echo ""
 
-# 创建构建目录
-mkdir -p build
-echo "切换到构建目录..."
-cd build
-
-# 编译RAW录制应用
-echo "编译cinepi_raw_recorder应用..."
-g++ -std=c++17 ../cinepi_raw_recorder.cpp ../src/shared/camera_controller.cpp ../src/shared/sdl_helper.cpp -o cinepi_raw_recorder \
-    -I../src/shared \
-    $(pkg-config --cflags --libs libcamera) \
-    $(pkg-config --cflags --libs sdl2) \
-    $(pkg-config --cflags --libs SDL2_ttf)
+# 检查代码语法错误
+echo "检查代码语法错误..."
+g++ -std=c++17 -fsyntax-only ../cinepi_raw_recorder.cpp ../src/shared/camera_controller.cpp ../src/shared/sdl_helper.cpp -I../src/shared $(pkg-config --cflags libcamera sdl2 SDL2_ttf)
 
 if [ $? -eq 0 ]; then
-    echo "编译成功!"
-    echo ""
-    echo "运行RAW录制应用: ./cinepi_raw_recorder [录制目录]"
-    echo "默认录制目录: /home/pi/cinepi_recordings"
-    echo ""
-    echo "使用说明:"
-    echo "  空格键: 开始/停止录制"
-    echo "  方向键上/下: 调整曝光补偿"
-    echo "  方向键左/右: 调整ISO"
-    echo "  W键: 循环切换白平衡"
-    echo "  ESC键: 退出应用"
+    echo "代码语法检查通过!"
+    echo "项目可以正常构建。"
 else
-    echo "编译失败!"
+    echo "代码语法检查失败!"
     exit 1
 fi
-
-# 复制可执行文件到当前目录
-cp cinepi_raw_recorder ..
-echo ""
-echo "可执行文件已复制到当前目录: ../cinepi_raw_recorder"

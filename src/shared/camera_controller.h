@@ -9,6 +9,7 @@
 #include <libcamera/camera_manager.h>
 #include <libcamera/framebuffer.h>
 #include <libcamera/framebuffer_allocator.h>
+#include <libcamera/framebuffer_mapper.h>
 #include <libcamera/request.h>
 #include <libcamera/stream.h>
 #include <memory>
@@ -90,6 +91,7 @@ private:
     std::shared_ptr<libcamera::Camera> camera_;
     std::unique_ptr<libcamera::CameraConfiguration> config_;
     std::unique_ptr<libcamera::FrameBufferAllocator> allocator_;
+    std::unique_ptr<libcamera::FrameBufferMapper> mapper_;
     libcamera::Stream* stream_;
     libcamera::Request* request_;
     const libcamera::FrameBuffer* current_buffer_;

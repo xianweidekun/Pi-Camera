@@ -17,6 +17,7 @@ CameraController::CameraController()
       camera_(nullptr),
       config_(nullptr),
       allocator_(nullptr),
+      mapper_(nullptr),
       stream_(nullptr),
       request_(nullptr),
       current_buffer_(nullptr),
@@ -100,8 +101,12 @@ void CameraController::Initialize(const CameraParams& params) {
             throw std::runtime_error("帧缓冲分配失败");
         }
 
+        // 创建帧缓冲映射器
+        mapper_.reset(new libcamera::FrameBufferMapper(allocator_.get()));
+
         // 创建预览缓冲区
         preview_buffer_ = new uint8_t[params_.width * params_.height * 3];
+        memset(preview_buffer_, 0, params_.width * params_.height * 3);
 
         is_initialized_ = true;
 
@@ -156,11 +161,8 @@ void CameraController::StartPreview() {
             throw std::runtime_error("相机启动失败");
         }
 
-        // 创建新请求
-        request_ = camera_->createRequest().release();
-        if (!request_) {
-            throw std::runtime_error("请求创建失败");
-        }
+        // 连接请求完成信号
+        camera_->requestCompleted.connect(this, &CameraController::processRequest);
 
         // 获取缓冲列表
         const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers = allocator_->buffers(stream_);
@@ -168,15 +170,24 @@ void CameraController::StartPreview() {
             throw std::runtime_error("没有可用的缓冲");
         }
 
-        // 设置请求缓冲
-        request_->addBuffer(stream_, buffers[0].get());
+        // 创建并发送所有请求
+        for (size_t i = 0; i < buffers.size(); ++i) {
+            // 创建新请求
+            request_ = camera_->createRequest().release();
+            if (!request_) {
+                throw std::runtime_error("请求创建失败");
+            }
 
-        // 连接请求完成信号
-        camera_->requestCompleted.connect(this, &CameraController::processRequest);
+            // 设置请求缓冲
+            request_->addBuffer(stream_, buffers[i].get());
 
-        // 发送请求
-        if (camera_->queueRequest(request_) < 0) {
-            throw std::runtime_error("请求发送失败");
+            // 发送请求
+            if (camera_->queueRequest(request_) < 0) {
+                delete request_;
+                request_ = nullptr;
+                throw std::runtime_error("请求发送失败");
+            }
+            request_ = nullptr; // 请求已被相机接管，不再属于我们
         }
 
         is_previewing_ = true;
@@ -216,50 +227,51 @@ void CameraController::StopPreview() {
 
 void CameraController::processRequest(libcamera::Request* request) {
     if (!request || request->status() != libcamera::Request::RequestComplete) {
+        if (request) {
+            // 如果请求状态不正常，仍需释放
+            delete request;
+        }
         return;
     }
 
-    // 获取缓冲
-    libcamera::FrameBuffer* buffer = request->findBuffer(stream_);
-    if (buffer) {
-        // 更新当前缓冲
-        current_buffer_ = buffer;
+    try {
+        // 获取缓冲
+        libcamera::FrameBuffer* buffer = request->findBuffer(stream_);
+        if (buffer) {
+            // 映射帧缓冲内存
+            int ret = mapper_->map(buffer);
+            if (ret < 0) {
+                std::cerr << "帧缓冲映射失败" << std::endl;
+            } else {
+                // 获取映射的内存
+                const libcamera::FrameBuffer::Plane &plane = buffer->planes()[0];
+                void *data = mapper_->mappedBuffer(buffer)->planes()[0].data;
+                size_t size = plane.length;
 
-        // 复制数据到预览缓冲区（注意：需要使用FrameBufferMapper映射，这里简化处理）
-        // 实际项目中需要包含<libcamera/framebuffer_mapper.h>并正确映射内存
+                // 更新当前缓冲
+                current_buffer_ = buffer;
+
+                // 复制数据到预览缓冲区（确保不超过缓冲区大小）
+                size_t copy_size = std::min(size, static_cast<size_t>(params_.width * params_.height * 3));
+                memcpy(preview_buffer_, data, copy_size);
+
+                // 取消映射
+                mapper_->unmap(buffer);
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "处理请求时发生异常: " << e.what() << std::endl;
     }
 
-    // 释放当前请求
-    delete request;
-
-    // 创建新请求继续预览
+    // 重新队列相同的请求继续预览
     if (is_previewing_) {
-        // 创建新请求
-        request_ = camera_->createRequest().release();
-        if (!request_) {
-            std::cerr << "请求创建失败" << std::endl;
-            return;
-        }
-
-        // 获取缓冲列表
-        const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers = allocator_->buffers(stream_);
-        if (buffers.empty()) {
-            std::cerr << "没有可用的缓冲" << std::endl;
-            delete request_;
-            request_ = nullptr;
-            return;
-        }
-
-        // 设置请求缓冲
-        request_->addBuffer(stream_, buffers[0].get());
-
-        // 发送请求
-        if (camera_->queueRequest(request_) < 0) {
+        if (camera_->queueRequest(request) < 0) {
             std::cerr << "请求队列失败" << std::endl;
-            delete request_;
-            request_ = nullptr;
-            return;
+            delete request;
         }
+    } else {
+        // 如果不再预览，释放请求
+        delete request;
     }
 }
 
