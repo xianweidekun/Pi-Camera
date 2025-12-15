@@ -33,6 +33,10 @@ enum RecordingStatus {
 struct AppState {
     cinepi::SDLHelper sdl_helper;
     cinepi::CameraController camera_controller;
+    cinepi::WindowPtr window;
+    cinepi::RendererPtr renderer;
+    cinepi::TexturePtr texture;
+    cinepi::FontPtr font;
     std::unique_ptr<std::ofstream> raw_file;
     RecordingStatus recording_status;
     std::string record_dir;
@@ -45,7 +49,9 @@ struct AppState {
     int white_balance;
     
     AppState() : recording_status(IDLE), running(true),
-                 exposure_compensation(0.0f), iso(100), white_balance(4000) {}
+                 exposure_compensation(0.0f), iso(100), white_balance(4000),
+                 window(nullptr, SDL_DestroyWindow), renderer(nullptr, SDL_DestroyRenderer),
+                 texture(nullptr, SDL_DestroyTexture), font(nullptr, TTF_CloseFont) {}
 };
 
 // 获取当前时间作为文件名
@@ -72,13 +78,13 @@ bool create_record_directory(const std::string& dir_path) {
 bool init_app(AppState& state, const std::string& record_dir) {
     try {
         // 初始化SDL
-        state.sdl_helper.Initialize("CinePI RAW录制", PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        state.sdl_helper.Initialize();
         
         // 创建窗口、渲染器和纹理
-        state.sdl_helper.CreateWindow();
-        state.sdl_helper.CreateRenderer();
-        state.sdl_helper.CreateTexture(PREVIEW_WIDTH, PREVIEW_HEIGHT);
-        state.sdl_helper.LoadFont();
+        state.window = cinepi::MakeWindow(state.sdl_helper.CreateWindow("CinePI RAW录制", PREVIEW_WIDTH, PREVIEW_HEIGHT));
+        state.renderer = cinepi::MakeRenderer(state.sdl_helper.CreateRenderer(state.window.get()));
+        state.texture = cinepi::MakeTexture(state.sdl_helper.CreateTexture(state.renderer.get(), SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, PREVIEW_WIDTH, PREVIEW_HEIGHT));
+        state.font = cinepi::MakeFont(state.sdl_helper.LoadFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16));
         
         // 初始化摄像头控制器
         cinepi::CameraParams params;
@@ -119,10 +125,14 @@ void update_preview(AppState& state) {
         if (!frame_data) return;
         
         // 清除渲染器
-        state.sdl_helper.ClearRenderer();
+        SDL_SetRenderDrawColor(state.renderer.get(), 0, 0, 0, 255);
+        SDL_RenderClear(state.renderer.get());
         
         // 绘制帧
-        state.sdl_helper.DrawFrame(frame_data, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+        if (state.texture) {
+            SDL_UpdateTexture(state.texture.get(), nullptr, frame_data, PREVIEW_WIDTH * 3);
+            SDL_RenderCopy(state.renderer.get(), state.texture.get(), nullptr, nullptr);
+        }
         
         // 渲染状态信息
         cinepi::Color white = {255, 255, 255, 255};
@@ -130,38 +140,38 @@ void update_preview(AppState& state) {
         
         std::stringstream status_text;
         status_text << "CinePI RAW录制 - " << RECORD_WIDTH << "x" << RECORD_HEIGHT << " " << FRAME_RATE << "fps";
-        state.sdl_helper.RenderText(status_text.str(), 10, 10, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), status_text.str(), 10, 10, white);
         
         // 录制状态
         if (state.recording_status == RECORDING) {
-            state.sdl_helper.RenderText("录制中...", 10, 30, red);
-            state.sdl_helper.RenderText("文件: " + state.current_filename, 10, 50, white);
+            state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "录制中...", 10, 30, red);
+            state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "文件: " + state.current_filename, 10, 50, white);
         } else {
-            state.sdl_helper.RenderText("准备录制", 10, 30, white);
+            state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "准备录制", 10, 30, white);
         }
         
         // 参数信息
         std::stringstream params_text;
         params_text << "曝光补偿: " << std::fixed << std::setprecision(1) << state.exposure_compensation;
-        state.sdl_helper.RenderText(params_text.str(), 10, 70, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), params_text.str(), 10, 70, white);
         
         params_text.str("");
         params_text << "ISO: " << state.iso;
-        state.sdl_helper.RenderText(params_text.str(), 10, 90, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), params_text.str(), 10, 90, white);
         
         params_text.str("");
         params_text << "白平衡: " << state.white_balance << "K";
-        state.sdl_helper.RenderText(params_text.str(), 10, 110, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), params_text.str(), 10, 110, white);
         
         // 操作提示
-        state.sdl_helper.RenderText("空格键: 开始/停止录制", 10, 130, white);
-        state.sdl_helper.RenderText("上/下箭头: 调整曝光补偿", 10, 150, white);
-        state.sdl_helper.RenderText("左/右箭头: 调整ISO", 10, 170, white);
-        state.sdl_helper.RenderText("W键: 循环切换白平衡", 10, 190, white);
-        state.sdl_helper.RenderText("ESC键: 退出", 10, 210, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "空格键: 开始/停止录制", 10, 130, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "上/下箭头: 调整曝光补偿", 10, 150, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "左/右箭头: 调整ISO", 10, 170, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "W键: 循环切换白平衡", 10, 190, white);
+        state.sdl_helper.RenderText(state.renderer.get(), state.font.get(), "ESC键: 退出", 10, 210, white);
         
         // 更新屏幕
-        state.sdl_helper.UpdateScreen();
+        SDL_RenderPresent(state.renderer.get());
         
         // 如果正在录制，将帧保存到文件
         if (state.recording_status == RECORDING && state.raw_file) {

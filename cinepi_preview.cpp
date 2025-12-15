@@ -24,7 +24,7 @@ const Color PANEL_COLOR(0, 0, 0, 128);
 // 预览应用类
 class PreviewApp {
 public:
-    PreviewApp() : isRunning(false) {
+    PreviewApp() : isRunning(false), window(nullptr, SDL_DestroyWindow), renderer(nullptr, SDL_DestroyRenderer), texture(nullptr, SDL_DestroyTexture), font(nullptr, TTF_CloseFont) {
     }
     
     ~PreviewApp() {
@@ -269,14 +269,7 @@ private:
         // 资源会通过智能指针自动清理
     }
     
-private:
-    SDLHelper sdlHelper;
-    WindowPtr window;
-    RendererPtr renderer;
-    TexturePtr texture;
-    FontPtr font;
-    CameraController cameraController;
-    bool isRunning;
+
 };
 
 int main(int argc, char* argv[]) {
