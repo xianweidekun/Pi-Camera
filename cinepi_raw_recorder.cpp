@@ -277,7 +277,6 @@ void handle_keyboard(AppState& state, SDL_Event& event) {
             break;
             
         case SDLK_w:
-        case SDLK_W:
             // 循环切换白平衡
             state.white_balance += 500;
             if (state.white_balance > 6500) state.white_balance = 3000;
