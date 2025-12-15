@@ -50,7 +50,7 @@ void CameraController::Initialize(const CameraParams& params) {
 
     try {
         // 初始化相机管理器
-        camera_manager_ = new libcamera::CameraManager();
+        camera_manager_.reset(new libcamera::CameraManager());
         if (camera_manager_->start()) {
             throw std::runtime_error("相机管理器初始化失败");
         }
@@ -74,7 +74,7 @@ void CameraController::Initialize(const CameraParams& params) {
         config_ = camera_->generateConfiguration({
             libcamera::StreamRole::Viewfinder,
             libcamera::StreamRole::Raw
-        }).release();
+        });
 
         if (!config_ || config_->validate() == libcamera::CameraConfiguration::Invalid) {
             throw std::runtime_error("相机配置无效");
@@ -95,7 +95,7 @@ void CameraController::Initialize(const CameraParams& params) {
         stream_ = viewfinder_config.stream();
 
         // 创建帧缓冲分配器
-        allocator_ = new libcamera::FrameBufferAllocator(camera_);
+        allocator_.reset(new libcamera::FrameBufferAllocator(camera_));
         if (allocator_->allocate(stream_) < 0) {
             throw std::runtime_error("帧缓冲分配失败");
         }
