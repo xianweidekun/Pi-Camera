@@ -229,11 +229,35 @@ void CameraController::processRequest(libcamera::Request* request) {
         // 实际项目中需要包含<libcamera/framebuffer_mapper.h>并正确映射内存
     }
 
-    // 重新队列请求以继续预览
+    // 释放当前请求
+    delete request;
+
+    // 创建新请求继续预览
     if (is_previewing_) {
-        // 直接重新队列同一个请求
-        if (camera_->queueRequest(request) < 0) {
+        // 创建新请求
+        request_ = camera_->createRequest().release();
+        if (!request_) {
+            std::cerr << "请求创建失败" << std::endl;
+            return;
+        }
+
+        // 获取缓冲列表
+        const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers = allocator_->buffers(stream_);
+        if (buffers.empty()) {
+            std::cerr << "没有可用的缓冲" << std::endl;
+            delete request_;
+            request_ = nullptr;
+            return;
+        }
+
+        // 设置请求缓冲
+        request_->addBuffer(stream_, buffers[0].get());
+
+        // 发送请求
+        if (camera_->queueRequest(request_) < 0) {
             std::cerr << "请求队列失败" << std::endl;
+            delete request_;
+            request_ = nullptr;
             return;
         }
     }
