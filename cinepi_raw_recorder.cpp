@@ -80,10 +80,7 @@ bool init_app(AppState& state, const std::string& record_dir) {
     
     try {
         // 初始化SDL
-        if (!state.sdl_helper.Initialize()) {
-            std::cerr << "无法初始化SDL" << std::endl;
-            return false;
-        }
+        state.sdl_helper.Initialize();
         
         // 创建窗口、渲染器和纹理
         state.window = cinepi::MakeWindow(state.sdl_helper.CreateWindow("CinePI RAW录制", PREVIEW_WIDTH, PREVIEW_HEIGHT));
@@ -120,16 +117,10 @@ bool init_app(AppState& state, const std::string& record_dir) {
         params.iso = state.iso;
         params.white_balance = state.white_balance;
         
-        if (!state.camera_controller.Initialize(params)) {
-            std::cerr << "无法初始化摄像头控制器" << std::endl;
-            return false;
-        }
+        state.camera_controller.Initialize(params);
         
         // 启动摄像头预览
-        if (!state.camera_controller.StartPreview()) {
-            std::cerr << "无法启动摄像头预览" << std::endl;
-            return false;
-        }
+        state.camera_controller.StartPreview();
         
         // 设置录制目录
         state.record_dir = record_dir;
