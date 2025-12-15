@@ -234,7 +234,7 @@ void CameraController::processRequest(libcamera::Request* request) {
             if (buffer->planes().size() > 0) {
                 const libcamera::FrameBuffer::Plane& plane = buffer->planes()[0];
                 std::memcpy(preview_buffer_, plane.memory.data(), 
-                           std::min(plane.length, static_cast<size_t>(params_.width * params_.height * 3)));
+                           std::min(static_cast<size_t>(plane.length), static_cast<size_t>(params_.width * params_.height * 3)));
             }
         }
 
