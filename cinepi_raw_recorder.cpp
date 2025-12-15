@@ -11,8 +11,8 @@
 #include <cstring>
 
 // 自定义头文件
-#include "src/shared/camera_controller.h"
-#include "src/shared/sdl_helper.h"
+#include "camera_controller.h"
+#include "sdl_helper.h"
 
 // 定义录制参数
 const int PREVIEW_WIDTH = 1280;  // 预览窗口宽度
