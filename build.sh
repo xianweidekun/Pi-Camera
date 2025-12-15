@@ -30,7 +30,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # 检查SDL2_ttf
-sdl2-config --cflags | grep SDL2_ttf > /dev/null 2>&1
+pkg-config --exists SDL2_ttf > /dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "错误: 未安装SDL2_ttf库"
     echo "请先安装: sudo apt install libsdl2-ttf-dev"
